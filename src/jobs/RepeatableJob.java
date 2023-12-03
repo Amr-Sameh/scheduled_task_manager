@@ -1,6 +1,10 @@
+package jobs;
+
+import cronScheduler.tasks.RebetableScheduledTask;
+
 import java.time.LocalDateTime;
 
-public  class RepeatableJob extends   RebetableScheduledTask{
+public  class RepeatableJob extends RebetableScheduledTask {
 
 
     public RepeatableJob(int interval, int timesToRun, String id , Integer runEveryXSeconds) {
@@ -8,7 +12,7 @@ public  class RepeatableJob extends   RebetableScheduledTask{
     }
 
     @Override
-    void launch() {
+    protected void launch() {
         System.out.println("Hello from "+  getId() + "  ( should run at : "+ getNextRunTime()+" , ran at : "+ LocalDateTime.now() +") : " + getTimesRun());
 
     }

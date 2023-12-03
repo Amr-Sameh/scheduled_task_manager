@@ -1,3 +1,5 @@
+package cronScheduler.tasks;
+
 public  abstract class RebetableScheduledTask extends   ScheduledTask{
 
 

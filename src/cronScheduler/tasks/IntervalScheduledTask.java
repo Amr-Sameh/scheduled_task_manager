@@ -1,3 +1,5 @@
+package cronScheduler.tasks;
+
 public abstract class IntervalScheduledTask  extends   ScheduledTask{
 
 

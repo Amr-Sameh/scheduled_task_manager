@@ -1,3 +1,7 @@
+package cronScheduler;
+
+import cronScheduler.tasks.ScheduledTask;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -8,75 +12,52 @@ import java.util.PriorityQueue;
 public class ScheduledTaskManager implements Closeable {
     private static ScheduledTaskManager instance;
 
-    static {
-        try {
-            instance = new ScheduledTaskManager();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     private final PriorityQueue<ScheduledTask> executionQueue;
     private final Thread executionCheckerThread;
-    private static final Object lock = new Object();
+    private volatile boolean isRunning;
 
-    private ScheduledTaskManager() throws InterruptedException {
+    private ScheduledTaskManager() {
         executionQueue = new PriorityQueue<>();
-        executionCheckerThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
+        isRunning = false;
 
-                while (true) {
-                    synchronized (lock) {
-                        try {
-                            checkForTasks();
-                        } catch (InterruptedException e) {
-                            try {
-                                checkForTasks();
-                            } catch (InterruptedException ex) {
-                                throw new RuntimeException(ex);
-                            }
-
-                        }
-
-                    }
-                }
+        executionCheckerThread = new Thread(() -> {
+            while (isRunning) {
+                checkForTasks();
             }
         });
     }
 
-    public static ScheduledTaskManager getInstance() throws InterruptedException {
+    public static ScheduledTaskManager getInstance() {
         if (instance == null) {
             instance = new ScheduledTaskManager();
         }
         return instance;
     }
 
-
     public void run() {
+        isRunning = true;
         executionCheckerThread.start();
     }
 
-    private void checkForTasks() throws InterruptedException {
-        while (true) {
-            synchronized (executionQueue){
+    private void checkForTasks() {
+        synchronized (executionQueue) {
+            try {
                 if (!executionQueue.isEmpty()) {
                     ScheduledTask task = executionQueue.poll();
-                    if (task.getNextRunTime().isEqual(java.time.LocalDateTime.now()) || task.getNextRunTime().isBefore(java.time.LocalDateTime.now())) {
+                    if (task.getNextRunTime().isEqual(LocalDateTime.now()) || task.getNextRunTime().isBefore(LocalDateTime.now())) {
                         executeTask(task);
                     } else {
                         executionQueue.add(task);
                         long waitTime = task.getNextRunTime().atZone(ZoneOffset.UTC).toInstant().toEpochMilli() - LocalDateTime.now().atZone(ZoneOffset.UTC).toInstant().toEpochMilli();
                         if (waitTime > 0) {
-                            lock.wait(waitTime);
+                            executionQueue.wait(waitTime);
                         }
-                        break;
                     }
                 } else {
-                    lock.wait();
-                    System.out.println("No tasks to run");
-                    break;
+                    executionQueue.wait();
                 }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
     }
@@ -92,40 +73,34 @@ public class ScheduledTaskManager implements Closeable {
         executeTaskThread.start();
     }
 
-
     public void addTask(ScheduledTask task) {
         synchronized (executionQueue) {
-
             executionQueue.add(task);
-            executionCheckerThread.interrupt();
+            executionQueue.notify(); // Notify the waiting thread
         }
     }
 
     public void removeTask(ScheduledTask task) {
-        executionQueue.remove(task);
-
-    }
-
-
-    public void clearTasks() {
-        executionQueue.clear();
-    }
-
-    public ArrayList<ScheduledTask> getTasks() {
-
-        return new ArrayList<>(executionQueue);
-    }
-
-    public void setTasks(ArrayList<ScheduledTask> tasks) {
-        executionQueue.clear();
-        for (ScheduledTask scheduledTask : tasks) {
-            addTask(scheduledTask);
+        synchronized (executionQueue) {
+            executionQueue.remove(task);
         }
     }
 
+    public void clearTasks() {
+        synchronized (executionQueue) {
+            executionQueue.clear();
+        }
+    }
+
+    public ArrayList<ScheduledTask> getTasks() {
+        synchronized (executionQueue) {
+            return new ArrayList<>(executionQueue);
+        }
+    }
 
     @Override
-    public void close() throws IOException {
+    public void close() {
+        isRunning = false;
         executionCheckerThread.interrupt();
     }
 }
